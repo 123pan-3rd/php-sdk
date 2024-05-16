@@ -1,1 +1,27 @@
-{  "name": "123pan-3rd/php-sdk",  "description": "Unofficial 123pan PHP SDK",  "keywords": [    "123pan",    "sdk"  ],  "type": "library",  "minimum-stability": "stable",  "homepage": "https://github.com/123pan-3rd/php-sdk",  "license": "MIT",  "require": {    "php": ">=5.5",    "ext-curl": "*",    "guzzlehttp/guzzle": "~6.0",    "ext-json": "*"  },  "require-dev": {    "ext-openssl": "*",    "phpunit/phpunit": "11"  },  "autoload": {    "psr-4": {      "Pan123\\": "src/Pan123/"    }  }}
+{
+  "name": "123pan-3rd/php-sdk",
+  "description": "Unofficial 123pan PHP SDK",
+  "keywords": [
+    "123pan",
+    "sdk"
+  ],
+  "type": "library",
+  "minimum-stability": "stable",
+  "homepage": "https://github.com/123pan-3rd/php-sdk",
+  "license": "MIT",
+  "require": {
+    "php": ">=5.5",
+    "ext-curl": "*",
+    "guzzlehttp/guzzle": "~6.0",
+    "ext-json": "*"
+  },
+  "require-dev": {
+    "ext-openssl": "*",
+    "phpunit/phpunit": "11"
+  },
+  "autoload": {
+    "psr-4": {
+      "Pan123\\": "src/Pan123/"
+    }
+  }
+}
