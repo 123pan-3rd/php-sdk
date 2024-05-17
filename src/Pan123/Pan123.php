@@ -21,6 +21,11 @@ class Pan123 {
 	protected $accessToken;
 
 	/**
+	 * @var string access_token_expired_at
+	 */
+	protected $accessTokenExpiredAt;
+
+	/**
 	 * @var string clientID
 	 */
 	protected $clientID;
@@ -64,6 +69,17 @@ class Pan123 {
 	 */
 	public function getAccessToken() {
 		return $this->accessToken;
+	}
+
+	/**
+	 * 获取accessToken过期时间
+	 *
+	 * 该方法仅在使用 clientID + clientSecret 登陆后可用
+	 *
+	 * @return string accessTokenExpiredAt 目前格式为RFC3339(2024-06-16T08:52:48+08:00)
+	 */
+	public function getAccessTokenExpiredAt() {
+		return $this->accessTokenExpiredAt;
 	}
 
 	/**
@@ -191,6 +207,7 @@ class Pan123 {
 			false
 		);
 		$this->accessToken = $ret["data"]["accessToken"];
+		$this->accessTokenExpiredAt = $ret["data"]["expiredAt"];
 		return $ret;
 	}
 

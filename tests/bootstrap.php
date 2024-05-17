@@ -2,5 +2,5 @@
 require_once __DIR__ . "/../vendor/autoload.php";
 
 const PAN123_ACCESS_TOKEN = "";
-const PAN123_CLIENT_ID = "";
-const PAN123_CLIENT_SECRET = "";
+define("PAN123_CLIENT_ID", getenv("PAN123_CLIENT_ID"));
+define("PAN123_CLIENT_SECRET", getenv("PAN123_CLIENT_SECRET"));
