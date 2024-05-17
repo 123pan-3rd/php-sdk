@@ -185,6 +185,13 @@ class Pan123 {
 	}
 
 	/**
+	 * @return  boolean
+	 */
+	protected function checkAuthRetry() {
+		return (!empty($this->clientID) && !empty($this->clientSecret));
+	}
+
+	/**
 	 * 使用clientID、clientSecret获取accessToken
 	 *
 	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('accessToken' => 访问凭证(string), 'expiredAt' => access_token过期时间(string)))`
@@ -243,7 +250,7 @@ class Pan123 {
 			json_encode($bodyData),
 			array(),
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
 		);
 	}
 
@@ -268,7 +275,7 @@ class Pan123 {
 			json_encode($bodyData),
 			array(),
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
 		);
 	}
 
@@ -350,7 +357,7 @@ class Pan123 {
 					)),
 					array(),
 					true,
-					(!empty($this->clientID) && !empty($this->clientSecret))
+					$this->checkAuthRetry()
 				);
 				$_preSignedURL = $sliceUploadUrlRet["data"]["presignedURL"];
 
@@ -380,7 +387,7 @@ class Pan123 {
 				)),
 				array(),
 				true,
-				(!empty($this->clientID) && !empty($this->clientSecret))
+				$this->checkAuthRetry()
 			);
 			foreach ($listUploadPartsRet["data"]["parts"] as $v) {
 				if ($fileSliceSizes[($v["partNumber"])] !== $v["size"]) {
@@ -398,7 +405,7 @@ class Pan123 {
 			)),
 			array(),
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
 		);
 		// 上传成功
 		if ($uploadCompleteRet["data"]["completed"]) {
@@ -435,7 +442,7 @@ class Pan123 {
 			json_encode($bodyData),
 			array(),
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
 		);
 	}
 
@@ -462,7 +469,32 @@ class Pan123 {
 			json_encode($bodyData),
 			array(),
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
+		);
+	}
+
+	/**
+	 * 文件重命名
+	 *
+	 * 批量重命名文件，最多支持同时30个文件重命名
+	 *
+	 * @param array $renameList 数组,每个成员的格式为 文件ID|新的文件名
+	 *
+	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => null)`
+	 * @throws SDKException
+	 */
+	public function renameFile($renameList) {
+		$bodyData = array(
+			"renameList" => $renameList,
+		);
+
+		return $this->callApi(
+			"/api/v1/file/rename",
+			"POST",
+			json_encode($bodyData),
+			array(),
+			true,
+			$this->checkAuthRetry()
 		);
 	}
 
@@ -487,7 +519,7 @@ class Pan123 {
 			json_encode($bodyData),
 			array(),
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
 		);
 	}
 
@@ -512,7 +544,7 @@ class Pan123 {
 			json_encode($bodyData),
 			array(),
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
 		);
 	}
 
@@ -537,7 +569,7 @@ class Pan123 {
 			json_encode($bodyData),
 			array(),
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
 		);
 	}
 
@@ -581,7 +613,32 @@ class Pan123 {
 			"",
 			$querys,
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
+		);
+	}
+
+	/**
+	 * 获取文件详情
+	 *
+	 * fileDetailData: array('fileID' => 文件ID(number), 'filename' => 文件名(string), 'type' => (number)文件类别: 0->文件 1->文件夹, 'size' => 文件大小(number), 'etag' => md5(string), 'status' => (number)文件审核状态: 大于100为审核驳回文件, 'parentFileId' => 父级ID(number), 'createAt' => 文件创建时间(string), 'trashed' => (number)该文件是否在回收站, 0-否、1-是)
+	 *
+	 * @param int $fileID 文件ID
+	 *
+	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => fileDetailData)`
+	 * @throws SDKException
+	 */
+	public function getFileDetail($fileID) {
+		$querys = array(
+			"fileID" => $fileID,
+		);
+
+		return $this->callApi(
+			"/api/v1/file/detail",
+			"GET",
+			"",
+			$querys,
+			true,
+			$this->checkAuthRetry()
 		);
 	}
 
@@ -600,7 +657,7 @@ class Pan123 {
 			"",
 			array(),
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
 		);
 	}
 
@@ -612,11 +669,12 @@ class Pan123 {
 	 * @param string $url 下载资源地址(http/https)
 	 * @param string $fileName 自定义文件名称
 	 * @param string $callBackUrl 回调地址, 回调内容请参考: https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/wn77piehmp9t8ut4#jf5bZ
+	 * @param int $dirID 下载到的指定目录ID, 不支持下载到根目录, 传0会下载到名为"来自:离线下载"的目录中
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => null)`
+	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('taskID' => 离线下载任务ID(number)))`
 	 * @throws SDKException
 	 */
-	public function offlineDownload($url, $fileName = "", $callBackUrl = "") {
+	public function offlineDownload($url, $fileName = "", $callBackUrl = "", $dirID = 0) {
 		$bodyData = array(
 			"url" => $url,
 		);
@@ -626,6 +684,9 @@ class Pan123 {
 		if (!empty($callBackUrl)) {
 			$bodyData["callBackUrl"] = $callBackUrl;
 		}
+		if ($dirID !== 0) {
+			$bodyData["dirID"] = $dirID;
+		}
 
 		return $this->callApi(
 			"/api/v1/offline/download",
@@ -633,7 +694,30 @@ class Pan123 {
 			json_encode($bodyData),
 			array(),
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
+		);
+	}
+
+	/**
+	 * 获取离线下载进度
+	 *
+	 * @param int $taskID 离线下载任务ID
+	 *
+	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('process' => 下载进度百分比,当文件下载失败,该进度将会归零(float), 'status' => (int)下载状态, 0-进行中、1-下载失败、2-下载成功、3-重试中))`
+	 * @throws SDKException
+	 */
+	public function getOfflineDownloadProcess($taskID) {
+		$querys = array(
+			"taskID" => $taskID,
+		);
+
+		return $this->callApi(
+			"/api/v1/offline/download/process",
+			"GET",
+			"",
+			$querys,
+			true,
+			$this->checkAuthRetry()
 		);
 	}
 
@@ -658,7 +742,7 @@ class Pan123 {
 			json_encode($bodyData),
 			array(),
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
 		);
 	}
 
@@ -683,7 +767,7 @@ class Pan123 {
 			json_encode($bodyData),
 			array(),
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
 		);
 	}
 
@@ -708,7 +792,7 @@ class Pan123 {
 			"",
 			$querys,
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
 		);
 	}
 
@@ -731,7 +815,7 @@ class Pan123 {
 			json_encode($bodyData),
 			array(),
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
 		);
 	}
 
@@ -754,7 +838,7 @@ class Pan123 {
 			json_encode($bodyData),
 			array(),
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
 		);
 	}
 
@@ -777,7 +861,7 @@ class Pan123 {
 			"",
 			$querys,
 			true,
-			(!empty($this->clientID) && !empty($this->clientSecret))
+			$this->checkAuthRetry()
 		);
 	}
 }

@@ -105,6 +105,12 @@ class Pan123Test extends TestCase {
 	}
 
 	#[Depends('testMoveFile')]
+	public function testRenameFile() {
+		self::$pan123->renameFile(array(self::$fileID."|test_rename"));
+		$this->assertTrue(true);
+	}
+
+	#[Depends('testRenameFile')]
 	public function testEnableDirectLink() {
 		self::$pan123->enableDirectLink(self::$dirID);
 		$this->assertTrue(true);
@@ -129,6 +135,12 @@ class Pan123Test extends TestCase {
 	}
 
 	#[Depends('testGetFileList')]
+	public function testGetFileDetail() {
+		self::$pan123->getFileDetail(self::$fileID);
+		$this->assertTrue(true);
+	}
+
+	#[Depends('testGetFileDetail')]
 	public function testTrashFile() {
 		if(self::$fileID !== 0) {
 			self::$pan123->trashFile(array(self::$fileID));
