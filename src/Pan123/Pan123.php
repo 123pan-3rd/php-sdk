@@ -8,6 +8,19 @@ namespace Pan123;
 use GuzzleHttp;
 use GuzzleHttp\Psr7;
 
+class FileUploadCallbackStatus {
+	// 创建文件
+	const CREATE_FILE = "CREATE_FILE";
+	// 上传分块
+	const FIRST_UPLOAD_CHUNK = "FIRST_UPLOAD_CHUNK";
+	// 重试上传分块
+	const RETRY_UPLOAD_CHUNK = "RETRY_UPLOAD_CHUNK";
+	// 上传完毕, 进行校验
+	const VERIFY_CHUNK = "VERIFY_CHUNK";
+	// 通知上传完成(文件合并)
+	const REPORT_COMPLETE = "REPORT_COMPLETE";
+}
+
 /**
  * Class pan123
  *
@@ -280,16 +293,20 @@ class Pan123 {
 	}
 
 	/**
-	 * 上传文件
+	 * 带Callback上传文件
+	 *
+	 * callback array: array('status' => 状态(FileUploadCallbackStatus), 'chunk_id' => (int)当前正在上传的chunkID, 仅在FIRST_UPLOAD_CHUNK/RETRY_UPLOAD_CHUNK时存在, 'chunk_count' => (int)仅在FIRST_UPLOAD_CHUNK/RETRY_UPLOAD_CHUNK/VERIFY_CHUNK时存在)
 	 *
 	 * @param int $parentFileID 父目录id, 上传到根目录时填写0
 	 * @param string $filename 文件名要小于128个字符且不能包含以下任何字符："\/:*?|><。（注：不能重名）
 	 * @param string|resource $content 要上传的文件内容或文件句柄(大文件推荐)
+	 * @param callable(array):void $cb 上传回调
+	 * @param int $retry 上传单一文件块时的重试次数, 0为不重试
 	 *
 	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('preuploadID' => 预上传ID: 仅在需要异步查询上传结果时存在(string), 'reuse' => 是否秒传(boolean), 'fileID' => 文件ID: 仅在秒传或无需异步查询上传结果时存在(number), 'async' => 是否需要异步查询上传结果(boolean)))`
 	 * @throws SDKException
 	 */
-	public function fileUpload($parentFileID, $filename, $content) {
+	public function fileUploadWithCallback($parentFileID, $filename, $content, $cb, $retry = 0) {
 		$_accessToken = $this->getAccessToken();
 		$ret = array(
 			"token_refresh" => false,
@@ -305,6 +322,7 @@ class Pan123 {
 			),
 		);
 		$fileStream = Psr7\stream_for($content);
+		$chunkCount = 0;
 		try {
 			$fileSize = $fileStream->getSize();
 
@@ -320,6 +338,11 @@ class Pan123 {
 			$fileStream->seek(0);
 
 			// 创建文件
+			$cb(array(
+				"status" => FileUploadCallbackStatus::CREATE_FILE,
+				"chunk_id" => 0,
+				"chunk_count" => 0,
+			));
 			$preUploadRet = $this->callApi(
 				"/upload/v1/file/create",
 				"POST",
@@ -346,14 +369,21 @@ class Pan123 {
 			// 分块上传
 			$fileSliceNo = 1;
 			$fileSliceSizes = array();
+			$chunkCount = ceil($fileSize / $fileSliceSize);
 			do {
+				$_fileSliceNo = $fileSliceNo;
+				$cb(array(
+					"status" => FileUploadCallbackStatus::FIRST_UPLOAD_CHUNK,
+					"chunk_id" => $_fileSliceNo,
+					"chunk_count" => $chunkCount,
+				));
 				// 获取块上传地址
 				$sliceUploadUrlRet = $this->callApi(
 					"/upload/v1/file/get_upload_url",
 					"POST",
 					json_encode(array(
 						"preuploadID" => $filePreUploadID,
-						"sliceNo" => $fileSliceNo,
+						"sliceNo" => $_fileSliceNo,
 					)),
 					array(),
 					true,
@@ -362,15 +392,34 @@ class Pan123 {
 				$_preSignedURL = $sliceUploadUrlRet["data"]["presignedURL"];
 
 				$fileSliceContent = $fileStream->read($fileSliceSize);
-				$fileSliceSizes[$fileSliceNo] = strlen($fileSliceContent);
+				$fileSliceSizes[$_fileSliceNo] = strlen($fileSliceContent);
 				// 在读取块内容后就对块ID进行累加
 				$fileSliceNo++;
 				// 上传
-				try {
-					$this->_fileUploadSlice($_preSignedURL, $fileSliceContent);
-				} catch (SDKException $e) {
-					// 上传错误了, 目前不处理直接抛出
-					throw $e;
+				$nowRetry = 0;
+				$uploadException = null;;
+				while (true) {
+					try {
+						if ($nowRetry > $retry) {
+							break;
+						}
+						if ($nowRetry !== 0) {
+							$cb(array(
+								"status" => FileUploadCallbackStatus::RETRY_UPLOAD_CHUNK,
+								"chunk_id" => $_fileSliceNo,
+								"chunk_count" => $chunkCount,
+							));
+						}
+						$this->_fileUploadSlice($_preSignedURL, $fileSliceContent);
+						break;
+					} catch (SDKException $e) {
+						// 上传错误了, 目前不处理直接抛出
+						$uploadException = $e;
+						$nowRetry++;
+					}
+				}
+				if ($uploadException !== null) {
+					throw new SDKException("maxRetry, last error: {$uploadException}", 999);
 				}
 			} while (!$fileStream->eof());
 		} finally {
@@ -378,6 +427,11 @@ class Pan123 {
 		}
 
 		// 上传完毕, 进行校验
+		$cb(array(
+			"status" => FileUploadCallbackStatus::VERIFY_CHUNK,
+			"chunk_id" => 0,
+			"chunk_count" => $chunkCount,
+		));
 		if ($fileSliceSize < $fileSize && count($fileSliceSizes) > 1) {
 			$listUploadPartsRet = $this->callApi(
 				"/upload/v1/file/list_upload_parts",
@@ -397,6 +451,11 @@ class Pan123 {
 		}
 
 		// 通知上传完成
+		$cb(array(
+			"status" => FileUploadCallbackStatus::REPORT_COMPLETE,
+			"chunk_id" => 0,
+			"chunk_count" => 0,
+		));
 		$uploadCompleteRet = $this->callApi(
 			"/upload/v1/file/upload_complete",
 			"POST",
@@ -421,6 +480,23 @@ class Pan123 {
 			return $ret;
 		}
 		throw new SDKException("upload failed", 999);
+	}
+
+	/**
+	 * 上传文件
+	 *
+	 * @param int $parentFileID 父目录id, 上传到根目录时填写0
+	 * @param string $filename 文件名要小于128个字符且不能包含以下任何字符："\/:*?|><。（注：不能重名）
+	 * @param string|resource $content 要上传的文件内容或文件句柄(大文件推荐)
+	 * @param int $retry 上传单一文件块时的重试次数, 0为不重试
+	 *
+	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('preuploadID' => 预上传ID: 仅在需要异步查询上传结果时存在(string), 'reuse' => 是否秒传(boolean), 'fileID' => 文件ID: 仅在秒传或无需异步查询上传结果时存在(number), 'async' => 是否需要异步查询上传结果(boolean)))`
+	 * @throws SDKException
+	 */
+	public function fileUpload($parentFileID, $filename, $content, $retry = 0) {
+		$cb = function ($_info) {
+		};
+		return $this->fileUploadWithCallback($parentFileID, $filename, $content, $cb, $retry);
 	}
 
 	/**

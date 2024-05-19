@@ -1,6 +1,6 @@
 <?php
 
-require_once __DIR__."/bootstrap.php";
+require_once __DIR__ . "/bootstrap.php";
 
 use PHPUnit\Framework\Attributes\Depends;
 use PHPUnit\Framework\TestCase;
@@ -46,29 +46,30 @@ class Pan123Test extends TestCase {
 	 */
 	public static function tearDownAfterClass(): void {
 		@unlink(__DIR__ . "/test_123mb_file.txt");
-		if(self::$dirID !== 0) {
+		if (self::$dirID !== 0) {
 			try {
 				self::$pan123->disableDirectLink(self::$dirID);
-			}catch (Exception $e) {
+			} catch (Exception $e) {
 			}
 		}
-		if(self::$fileID !== 0) {
+		if (self::$fileID !== 0) {
 			try {
 				self::$pan123->trashFile(array(self::$fileID));
-			}catch (Exception $e) {
+			} catch (Exception $e) {
 			}
 		}
 		// 根据咨询官方技术人员, 该接口可同时删除文件夹
-		if(self::$dirID !== 0) {
+		if (self::$dirID !== 0) {
 			try {
 				self::$pan123->trashFile(array(self::$dirID));
-			}catch (Exception $e) {
+			} catch (Exception $e) {
 			}
 		}
 	}
 
 	public function testLogin() {
 		self::$pan123->login();
+		echo "accessTokenExpiredAt = " . self::$pan123->getAccessTokenExpiredAt().PHP_EOL;
 		$this->assertTrue(true);
 	}
 
@@ -81,9 +82,17 @@ class Pan123Test extends TestCase {
 
 	#[Depends('testMkDir')]
 	public function testUploadFile() {
-		$ret = self::$pan123->fileUpload(self::$dirID, "php_sdk_unit_test_upload.txt", fopen(__DIR__ . "/test_123mb_file.txt", "rb"));
+		$cb = function ($_info) {
+			echo json_encode($_info).PHP_EOL;
+			if (ob_get_level() > 0) {
+				ob_flush();
+			}
+			flush();
+		};
+		$ret = self::$pan123->fileUploadWithCallback(self::$dirID, "php_sdk_unit_test_upload.txt", fopen(__DIR__ . "/test_123mb_file.txt", "rb"), $cb, 23);
 		if ($ret["data"]["async"]) {
 			// 需要等待异步上传
+			echo "wait for async upload".PHP_EOL;
 			while (true) {
 				$_ret = self::$pan123->getUploadAsyncResult($ret["data"]["preuploadID"]);
 				if ($_ret["data"]["completed"]) {
@@ -106,7 +115,7 @@ class Pan123Test extends TestCase {
 
 	#[Depends('testMoveFile')]
 	public function testRenameFile() {
-		self::$pan123->renameFile(array(self::$fileID."|test_rename"));
+		self::$pan123->renameFile(array(self::$fileID . "|test_rename"));
 		$this->assertTrue(true);
 	}
 
@@ -142,12 +151,12 @@ class Pan123Test extends TestCase {
 
 	#[Depends('testGetFileDetail')]
 	public function testTrashFile() {
-		if(self::$fileID !== 0) {
+		if (self::$fileID !== 0) {
 			self::$pan123->trashFile(array(self::$fileID));
 			self::$fileID = 0;
 		}
 		// 根据咨询官方技术人员, 该接口可同时删除文件夹
-		if(self::$dirID !== 0) {
+		if (self::$dirID !== 0) {
 			self::$pan123->trashFile(array(self::$dirID));
 			self::$dirID = 0;
 		}
