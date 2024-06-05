@@ -34,21 +34,6 @@ class Pan123 {
 	protected $accessToken;
 
 	/**
-	 * @var string access_token_expired_at
-	 */
-	protected $accessTokenExpiredAt;
-
-	/**
-	 * @var string clientID
-	 */
-	protected $clientID;
-
-	/**
-	 * @var string clientSecret
-	 */
-	protected $clientSecret;
-
-	/**
 	 * @var numeric timeout
 	 */
 	protected $timeout;
@@ -61,16 +46,10 @@ class Pan123 {
 	/**
 	 * 123pan constructor.
 	 *
-	 * @param string $accessToken access_token, 如不存在可传空值并手动调用login方法获取
-	 * @param string $clientID clientID, 如不提供则不支持自动获取access_token
-	 * @param string $clientSecret clientSecret, 与clientID组成一对
 	 * @param numeric $timeout HTTP请求超时时间, 默认为0
 	 * @param boolean $debug 是否开启debug
 	 */
-	public function __construct($accessToken, $clientID = "", $clientSecret = "", $timeout = 0, $debug = false) {
-		$this->accessToken = $accessToken;
-		$this->clientID = $clientID;
-		$this->clientSecret = $clientSecret;
+	public function __construct($timeout = 0, $debug = false) {
 		$this->timeout = $timeout;
 		$this->debug = $debug;
 	}
@@ -85,14 +64,12 @@ class Pan123 {
 	}
 
 	/**
-	 * 获取accessToken过期时间
+	 * 设置当前accessToken
 	 *
-	 * 该方法仅在使用 clientID + clientSecret 登陆后可用
-	 *
-	 * @return string accessTokenExpiredAt 目前格式为RFC3339(2024-06-16T08:52:48+08:00)
+	 * @param string $accessToken access_token
 	 */
-	public function getAccessTokenExpiredAt() {
-		return $this->accessTokenExpiredAt;
+	public function setAccessToken($accessToken) {
+		$this->accessToken = $accessToken;
 	}
 
 	/**
@@ -168,67 +145,48 @@ class Pan123 {
 			// 接口错误响应
 			throw new SDKException($resp["message"], $resp["code"], $resp["x-traceID"]);
 		}
+
 		return $resp["data"];
 	}
 
 	/**
 	 * @throws SDKException
 	 */
-	protected function callApi($path, $method, $body, $querys, $withAuth, $authRetry) {
+	protected function callApi($path, $method, $body, $querys, $withAuth) {
 		$callRet = array();
-		try {
-			$callRet["data"] = $this->_callApi(
-				$path,
-				$method,
-				$body,
-				$querys,
-				($withAuth ? $this->accessToken : "")
-			);
-			$callRet["token_refresh"] = false;
-			return $callRet;
-		} catch (SDKException $e) {
-			if ($e->getCode() === 401 && $authRetry) {
-				$this->login();
-				$callRet["data"] = $this->callApi($path, $method, $body, $querys, $withAuth, false);
-				$callRet["token_refresh"] = true;
-				return $callRet;
-			}
-			throw $e;
-		}
-	}
+		$callRet["data"] = $this->_callApi(
+			$path,
+			$method,
+			$body,
+			$querys,
+			($withAuth ? $this->accessToken : "")
+		);
 
-	/**
-	 * @return  boolean
-	 */
-	protected function checkAuthRetry() {
-		return (!empty($this->clientID) && !empty($this->clientSecret));
+		return $callRet;
 	}
 
 	/**
 	 * 使用clientID、clientSecret获取accessToken
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('accessToken' => 访问凭证(string), 'expiredAt' => access_token过期时间(string)))`
+	 * @param string $clientID client_id
+	 * @param string $clientSecret client_secret
+	 *
+	 * @return array 成功时返回 `array('data' => array('accessToken' => 访问凭证(string), 'expiredAt' => access_token过期时间(string)))`
 	 * @throws SDKException
 	 */
-	public function login() {
-		if (empty($this->clientSecret) || empty($this->clientID)) {
-			throw new SDKException("clientSecret/clientID empty", 999);
-		}
+	public function requestAccessToken($clientID, $clientSecret) {
 		$bodyData = array(
-			"clientID" => $this->clientID,
-			"clientSecret" => $this->clientSecret,
+			"clientID" => $clientID,
+			"clientSecret" => $clientSecret,
 		);
-		$ret = $this->callApi(
+
+		return $this->callApi(
 			"/api/v1/access_token",
 			"POST",
 			json_encode($bodyData),
 			array(),
-			false,
 			false
 		);
-		$this->accessToken = $ret["data"]["accessToken"];
-		$this->accessTokenExpiredAt = $ret["data"]["expiredAt"];
-		return $ret;
 	}
 
 	/**
@@ -241,7 +199,7 @@ class Pan123 {
 	 * @param string $fileIDList 分享文件ID列表, 以逗号分割, 最大只支持拼接100个文件ID, 示例:1,2,3
 	 * @param string $sharePwd 分享链接提取码
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('shareID' => 分享ID(number), 'expiredAt' => 分享码(string)))`
+	 * @return array 成功时返回 `array('data' => array('shareID' => 分享ID(number), 'expiredAt' => 分享码(string)))`
 	 * @throws SDKException
 	 */
 	public function createShare($shareName, $shareExpire, $fileIDList, $sharePwd = "") {
@@ -262,8 +220,7 @@ class Pan123 {
 			"POST",
 			json_encode($bodyData),
 			array(),
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -273,7 +230,7 @@ class Pan123 {
 	 * @param string $name 目录名(注:不能重名)
 	 * @param int $parentID 父目录id，创建到根目录时填写 0
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('dirID' => 创建的目录ID(number)))`
+	 * @return array 成功时返回 `array('data' => array('dirID' => 创建的目录ID(number)))`
 	 * @throws SDKException
 	 */
 	public function mkdir($name, $parentID) {
@@ -287,8 +244,7 @@ class Pan123 {
 			"POST",
 			json_encode($bodyData),
 			array(),
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -303,13 +259,11 @@ class Pan123 {
 	 * @param callable(array):void $cb 上传回调
 	 * @param int $retry 上传单一文件块时的重试次数, 0为不重试
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('preuploadID' => 预上传ID: 仅在需要异步查询上传结果时存在(string), 'reuse' => 是否秒传(boolean), 'fileID' => 文件ID: 仅在秒传或无需异步查询上传结果时存在(number), 'async' => 是否需要异步查询上传结果(boolean)))`
+	 * @return array 成功时返回 `array('data' => array('preuploadID' => 预上传ID: 仅在需要异步查询上传结果时存在(string), 'reuse' => 是否秒传(boolean), 'fileID' => 文件ID: 仅在秒传或无需异步查询上传结果时存在(number), 'async' => 是否需要异步查询上传结果(boolean)))`
 	 * @throws SDKException
 	 */
 	public function fileUploadWithCallback($parentFileID, $filename, $content, $cb, $retry = 0) {
-		$_accessToken = $this->getAccessToken();
 		$ret = array(
-			"token_refresh" => false,
 			"data" => array(
 				// 预上传ID: 仅在需要异步查询上传结果时存在
 				"preuploadID" => "",
@@ -353,12 +307,10 @@ class Pan123 {
 					"size" => $fileSize
 				)),
 				array(),
-				true,
-				(!empty($this->clientID) && !empty($this->clientSecret))
+				true
 			);
 			if ($preUploadRet["data"]["reuse"]) {
 				// 秒传成功
-				$ret["token_refresh"] = ($_accessToken === $this->getAccessToken());
 				$ret["data"]["fileID"] = $preUploadRet["data"]["fileID"];
 				$ret["data"]["reuse"] = true;
 				return $ret;
@@ -386,8 +338,7 @@ class Pan123 {
 						"sliceNo" => $_fileSliceNo,
 					)),
 					array(),
-					true,
-					$this->checkAuthRetry()
+					true
 				);
 				$_preSignedURL = $sliceUploadUrlRet["data"]["presignedURL"];
 
@@ -440,8 +391,7 @@ class Pan123 {
 					"preuploadID" => $filePreUploadID,
 				)),
 				array(),
-				true,
-				$this->checkAuthRetry()
+				true
 			);
 			foreach ($listUploadPartsRet["data"]["parts"] as $v) {
 				if ($fileSliceSizes[($v["partNumber"])] !== $v["size"]) {
@@ -463,18 +413,15 @@ class Pan123 {
 				"preuploadID" => $filePreUploadID,
 			)),
 			array(),
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 		// 上传成功
 		if ($uploadCompleteRet["data"]["completed"]) {
-			$ret["token_refresh"] = ($_accessToken === $this->getAccessToken());
 			$ret["data"]["fileID"] = $uploadCompleteRet["data"]["fileID"];
 			return $ret;
 		}
 		// 需要异步查询上传结果
 		if ($uploadCompleteRet["data"]["async"]) {
-			$ret["token_refresh"] = ($_accessToken === $this->getAccessToken());
 			$ret["data"]["async"] = true;
 			$ret["data"]["preuploadID"] = $filePreUploadID;
 			return $ret;
@@ -490,7 +437,7 @@ class Pan123 {
 	 * @param string|resource $content 要上传的文件内容或文件句柄(大文件推荐)
 	 * @param int $retry 上传单一文件块时的重试次数, 0为不重试
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('preuploadID' => 预上传ID: 仅在需要异步查询上传结果时存在(string), 'reuse' => 是否秒传(boolean), 'fileID' => 文件ID: 仅在秒传或无需异步查询上传结果时存在(number), 'async' => 是否需要异步查询上传结果(boolean)))`
+	 * @return array 成功时返回 `array('data' => array('preuploadID' => 预上传ID: 仅在需要异步查询上传结果时存在(string), 'reuse' => 是否秒传(boolean), 'fileID' => 文件ID: 仅在秒传或无需异步查询上传结果时存在(number), 'async' => 是否需要异步查询上传结果(boolean)))`
 	 * @throws SDKException
 	 */
 	public function fileUpload($parentFileID, $filename, $content, $retry = 0) {
@@ -504,7 +451,7 @@ class Pan123 {
 	 *
 	 * @param string $preuploadID 预上传ID
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('completed' => 上传合并是否完成,如果为false,请至少1秒后发起轮询(boolean), 'fileID' => 上传成功的文件ID(number)))`
+	 * @return array 成功时返回 `array('data' => array('completed' => 上传合并是否完成,如果为false,请至少1秒后发起轮询(boolean), 'fileID' => 上传成功的文件ID(number)))`
 	 * @throws SDKException
 	 */
 	public function getUploadAsyncResult($preuploadID) {
@@ -517,8 +464,7 @@ class Pan123 {
 			"POST",
 			json_encode($bodyData),
 			array(),
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -530,7 +476,7 @@ class Pan123 {
 	 * @param array $fileIDs 文件id数组
 	 * @param int $toParentFileID 要移动到的目标文件夹id，移动到根目录时填写 0
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => null)`
+	 * @return array 成功时返回 `array('data' => null)`
 	 * @throws SDKException
 	 */
 	public function moveFile($fileIDs, $toParentFileID) {
@@ -544,8 +490,7 @@ class Pan123 {
 			"POST",
 			json_encode($bodyData),
 			array(),
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -556,7 +501,7 @@ class Pan123 {
 	 *
 	 * @param array $renameList 数组,每个成员的格式为 文件ID|新的文件名
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => null)`
+	 * @return array 成功时返回 `array('data' => null)`
 	 * @throws SDKException
 	 */
 	public function renameFile($renameList) {
@@ -569,8 +514,7 @@ class Pan123 {
 			"POST",
 			json_encode($bodyData),
 			array(),
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -581,7 +525,7 @@ class Pan123 {
 	 *
 	 * @param array $fileIDs 文件id数组,一次性最大不能超过 100 个文件
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => null)`
+	 * @return array 成功时返回 `array('data' => null)`
 	 * @throws SDKException
 	 */
 	public function trashFile($fileIDs) {
@@ -594,8 +538,7 @@ class Pan123 {
 			"POST",
 			json_encode($bodyData),
 			array(),
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -606,7 +549,7 @@ class Pan123 {
 	 *
 	 * @param array $fileIDs 文件id数组,一次性最大不能超过 100 个文件
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => null)`
+	 * @return array 成功时返回 `array('data' => null)`
 	 * @throws SDKException
 	 */
 	public function recoverFile($fileIDs) {
@@ -619,8 +562,7 @@ class Pan123 {
 			"POST",
 			json_encode($bodyData),
 			array(),
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -631,7 +573,7 @@ class Pan123 {
 	 *
 	 * @param array $fileIDs 文件id数组,一次性最大不能超过 100 个文件
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => null)`
+	 * @return array 成功时返回 `array('data' => null)`
 	 * @throws SDKException
 	 */
 	public function deleteFile($fileIDs) {
@@ -644,8 +586,7 @@ class Pan123 {
 			"POST",
 			json_encode($bodyData),
 			array(),
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -662,7 +603,7 @@ class Pan123 {
 	 * @param boolean $trashed 是否查看回收站的文件
 	 * @param string $searchData 搜索关键字
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array(fileListData...))`
+	 * @return array 成功时返回 `array('data' => array(fileListData...))`
 	 * @throws SDKException
 	 */
 	public function getFileList($parentFileId, $page, $limit, $orderBy, $orderDirection, $trashed = false, $searchData = "") {
@@ -688,8 +629,7 @@ class Pan123 {
 			"GET",
 			"",
 			$querys,
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -700,7 +640,7 @@ class Pan123 {
 	 *
 	 * @param int $fileID 文件ID
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => fileDetailData)`
+	 * @return array 成功时返回 `array('data' => fileDetailData)`
 	 * @throws SDKException
 	 */
 	public function getFileDetail($fileID) {
@@ -713,8 +653,7 @@ class Pan123 {
 			"GET",
 			"",
 			$querys,
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -723,7 +662,7 @@ class Pan123 {
 	 *
 	 * userInfo: array('uid' => 用户账号ID(number), 'nickname' => 昵称(string), 'headImage' => 头像(string), 'passport' => 手机号码(string), 'mail' => 邮箱(string), 'spaceUsed' => 已用空间(number), 'spacePermanent' => 永久空间(number), 'spaceTemp' => 临时空间(number), 'spaceTempExpr' => 临时空间到期日(string))
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => userInfo)`
+	 * @return array 成功时返回 `array('data' => userInfo)`
 	 * @throws SDKException
 	 */
 	public function getUserInfo() {
@@ -732,8 +671,7 @@ class Pan123 {
 			"GET",
 			"",
 			array(),
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -747,7 +685,7 @@ class Pan123 {
 	 * @param string $callBackUrl 回调地址, 回调内容请参考: https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/wn77piehmp9t8ut4#jf5bZ
 	 * @param int $dirID 下载到的指定目录ID, 不支持下载到根目录, 传0会下载到名为"来自:离线下载"的目录中
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('taskID' => 离线下载任务ID(number)))`
+	 * @return array 成功时返回 `array('data' => array('taskID' => 离线下载任务ID(number)))`
 	 * @throws SDKException
 	 */
 	public function offlineDownload($url, $fileName = "", $callBackUrl = "", $dirID = 0) {
@@ -769,8 +707,7 @@ class Pan123 {
 			"POST",
 			json_encode($bodyData),
 			array(),
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -779,7 +716,7 @@ class Pan123 {
 	 *
 	 * @param int $taskID 离线下载任务ID
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('process' => 下载进度百分比,当文件下载失败,该进度将会归零(float), 'status' => (int)下载状态, 0-进行中、1-下载失败、2-下载成功、3-重试中))`
+	 * @return array 成功时返回 `array('data' => array('process' => 下载进度百分比,当文件下载失败,该进度将会归零(float), 'status' => (int)下载状态, 0-进行中、1-下载失败、2-下载成功、3-重试中))`
 	 * @throws SDKException
 	 */
 	public function getOfflineDownloadProcess($taskID) {
@@ -792,8 +729,7 @@ class Pan123 {
 			"GET",
 			"",
 			$querys,
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -804,7 +740,7 @@ class Pan123 {
 	 *
 	 * @param array $ids 视频文件ID列表, 示例:[1,2,3,4]
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('noneList' => 未发起过转码的 ID(array), 'errorList' => 错误文件ID列表,这些文件ID无法进行转码操作(array), 'success' => 转码成功的文件ID列表(array)))`
+	 * @return array 成功时返回 `array('data' => array('noneList' => 未发起过转码的 ID(array), 'errorList' => 错误文件ID列表,这些文件ID无法进行转码操作(array), 'success' => 转码成功的文件ID列表(array)))`
 	 * @throws SDKException
 	 */
 	public function queryDirectLinkTranscode($ids) {
@@ -817,8 +753,7 @@ class Pan123 {
 			"POST",
 			json_encode($bodyData),
 			array(),
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -829,7 +764,7 @@ class Pan123 {
 	 *
 	 * @param array $ids 需要转码的文件ID列表,示例: [1,2,3,4]
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => null)`
+	 * @return array 成功时返回 `array('data' => null)`
 	 * @throws SDKException
 	 */
 	public function doDirectLinkTranscode($ids) {
@@ -842,8 +777,7 @@ class Pan123 {
 			"POST",
 			json_encode($bodyData),
 			array(),
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -854,7 +788,7 @@ class Pan123 {
 	 *
 	 * @param int $fileID 启用直链空间的文件夹的fileID
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array(linkData...))`
+	 * @return array 成功时返回 `array('data' => array(linkData...))`
 	 * @throws SDKException
 	 */
 	public function getDirectLinkM3u8($fileID) {
@@ -867,8 +801,7 @@ class Pan123 {
 			"GET",
 			"",
 			$querys,
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -877,7 +810,7 @@ class Pan123 {
 	 *
 	 * @param int $fileID 启用直链空间的文件夹的fileID
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('filename' => 成功启用直链空间的文件夹的名称(string)))`
+	 * @return array 成功时返回 `array('data' => array('filename' => 成功启用直链空间的文件夹的名称(string)))`
 	 * @throws SDKException
 	 */
 	public function enableDirectLink($fileID) {
@@ -890,8 +823,7 @@ class Pan123 {
 			"POST",
 			json_encode($bodyData),
 			array(),
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -900,7 +832,7 @@ class Pan123 {
 	 *
 	 * @param int $fileID 禁用直链空间的文件夹的fileID
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('filename' => 成功禁用直链空间的文件夹的名称(string)))`
+	 * @return array 成功时返回 `array('data' => array('filename' => 成功禁用直链空间的文件夹的名称(string)))`
 	 * @throws SDKException
 	 */
 	public function disableDirectLink($fileID) {
@@ -913,8 +845,7 @@ class Pan123 {
 			"POST",
 			json_encode($bodyData),
 			array(),
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 
@@ -923,7 +854,7 @@ class Pan123 {
 	 *
 	 * @param int $fileID 需要获取直链链接的文件的fileID
 	 *
-	 * @return array 成功时返回 `array('token_refresh' => accessToken是否已更新(boolean), 'data' => array('url' => 文件对应的直链链接(string)))`
+	 * @return array 成功时返回 `array('data' => array('url' => 文件对应的直链链接(string)))`
 	 * @throws SDKException
 	 */
 	public function getDirectLinkUrl($fileID) {
@@ -936,8 +867,7 @@ class Pan123 {
 			"GET",
 			"",
 			$querys,
-			true,
-			$this->checkAuthRetry()
+			true
 		);
 	}
 }

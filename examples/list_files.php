@@ -9,9 +9,12 @@ use Pan123\Pan123;
 
 require_once __DIR__ . "/../tests/bootstrap.php";
 
-$pan123 = new Pan123(PAN123_ACCESS_TOKEN, PAN123_CLIENT_ID, PAN123_CLIENT_SECRET, 0, false);
+$pan123 = new Pan123(0, false);
+$pan123->setAccessToken(PAN123_ACCESS_TOKEN);
 
 try {
+	$accessTokenData = $pan123->requestAccessToken(PAN123_CLIENT_ID, PAN123_CLIENT_SECRET);
+	$pan123->setAccessToken($accessTokenData["data"]["accessToken"]);
 	var_dump($pan123->getFileList(0, 1, 99, "file_id", "desc"));
 } catch (\Exception $e) {
 	echo "Failed: " . $e->getMessage() . PHP_EOL;

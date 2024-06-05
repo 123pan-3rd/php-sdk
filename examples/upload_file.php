@@ -10,7 +10,8 @@ use Pan123\Pan123;
 ini_set("memory_limit", "256M");
 require_once __DIR__ . "/../tests/bootstrap.php";
 
-$pan123 = new Pan123(PAN123_ACCESS_TOKEN, PAN123_CLIENT_ID, PAN123_CLIENT_SECRET, 0, false);
+$pan123 = new Pan123(0, false);
+$pan123->setAccessToken(PAN123_ACCESS_TOKEN);
 
 // 生成测试文件
 $fileSize = 123 * 1024 * 1024;
@@ -24,6 +25,8 @@ for ($i = 0; $i < $numWrites; $i++) {
 fclose($file);
 
 try {
+	$accessTokenData = $pan123->requestAccessToken(PAN123_CLIENT_ID, PAN123_CLIENT_SECRET);
+	$pan123->setAccessToken($accessTokenData["data"]["accessToken"]);
 	var_dump($pan123->fileUpload(0, "test_123mb_file.txt", fopen(__DIR__ . "/test_123mb_file.txt", "rb")));
 } catch (\Exception $e) {
 	echo "Failed: " . $e->getMessage() . PHP_EOL;
