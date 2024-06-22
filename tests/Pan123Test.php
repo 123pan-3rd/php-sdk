@@ -31,15 +31,29 @@ class Pan123Test extends TestCase {
 	public static $fileID = 0;
 
 	/**
+	 * @var int
+	 */
+	public static $smallFileID = 0;
+
+	/**
 	 * 初始化测试环境
 	 */
 	public static function setUpBeforeClass(): void {
 		self::$pan123 = new Pan123(0, false);
 		self::$pan123->setAccessToken(PAN123_ACCESS_TOKEN);
-		// 生成测试文件
+		// 生成测试文件(123MB)
 		$fileSize = 123 * 1024 * 1024;
 		$file = fopen(__DIR__ . "/test_123mb_file.txt", "w");
 		$blockSize = 8192; // 8KB
+		$numWrites = ceil($fileSize / $blockSize);
+		for ($i = 0; $i < $numWrites; $i++) {
+			$randomContent = openssl_random_pseudo_bytes($blockSize);
+			fwrite($file, $randomContent);
+		}
+		fclose($file);
+		// 生成测试文件(8KB)
+		$fileSize = 8 * 1024;
+		$file = fopen(__DIR__ . "/test_8kb_file.txt", "w");
 		$numWrites = ceil($fileSize / $blockSize);
 		for ($i = 0; $i < $numWrites; $i++) {
 			$randomContent = openssl_random_pseudo_bytes($blockSize);
@@ -53,6 +67,7 @@ class Pan123Test extends TestCase {
 	 */
 	public static function tearDownAfterClass(): void {
 		@unlink(__DIR__ . "/test_123mb_file.txt");
+		@unlink(__DIR__ . "/test_8kb_file.txt");
 		if (self::$dirID !== 0) {
 			try {
 				self::$pan123->disableDirectLink(self::$dirID);
@@ -62,6 +77,12 @@ class Pan123Test extends TestCase {
 		if (self::$fileID !== 0) {
 			try {
 				self::$pan123->trashFile(array(self::$fileID));
+			} catch (Exception $e) {
+			}
+		}
+		if (self::$smallFileID !== 0) {
+			try {
+				self::$pan123->trashFile(array(self::$smallFileID));
 			} catch (Exception $e) {
 			}
 		}
@@ -115,6 +136,32 @@ class Pan123Test extends TestCase {
 	}
 
 	#[Depends('testUploadFile')]
+	public function testUploadSmallFile() {
+		$cb = function ($_info) {
+			echo json_encode($_info) . PHP_EOL;
+			if (ob_get_level() > 0) {
+				ob_flush();
+			}
+			flush();
+		};
+		$ret = self::$pan123->fileUploadWithCallback(self::$dirID, "php_sdk_unit_test_upload_small.txt", fopen(__DIR__ . "/test_8kb_file.txt", "rb"), $cb, 23);
+		if ($ret["data"]["async"]) {
+			// 需要等待异步上传
+			echo "wait for async upload" . PHP_EOL;
+			while (true) {
+				$_ret = self::$pan123->getUploadAsyncResult($ret["data"]["preuploadID"]);
+				if ($_ret["data"]["completed"]) {
+					$ret["data"]["fileID"] = $_ret["data"]["fileID"];
+					break;
+				}
+				sleep(2);
+			}
+		}
+		self::$smallFileID = $ret["data"]["fileID"];
+		$this->assertTrue(true);
+	}
+
+	#[Depends('testUploadSmallFile')]
 	public function testMoveFile() {
 		self::$pan123->moveFile(array(self::$fileID), 0);
 		self::$pan123->moveFile(array(self::$fileID), self::$dirID);
@@ -152,6 +199,12 @@ class Pan123Test extends TestCase {
 	}
 
 	#[Depends('testGetFileList')]
+	public function testGetFileListV2() {
+		self::$pan123->getFileListV2(self::$dirID, 100);
+		$this->assertTrue(true);
+	}
+
+	#[Depends('testGetFileListV2')]
 	public function testGetFileDetail() {
 		self::$pan123->getFileDetail(self::$fileID);
 		$this->assertTrue(true);

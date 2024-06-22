@@ -15,7 +15,7 @@ $pan123->setAccessToken(PAN123_ACCESS_TOKEN);
 try {
 	$accessTokenData = $pan123->requestAccessToken(PAN123_CLIENT_ID, PAN123_CLIENT_SECRET);
 	$pan123->setAccessToken($accessTokenData["data"]["accessToken"]);
-	var_dump($pan123->getFileList(0, 1, 99, "file_id", "desc"));
+	var_dump($pan123->getFileListV2(0, 100));
 } catch (\Exception $e) {
 	echo "Failed: " . $e->getMessage() . PHP_EOL;
 }
